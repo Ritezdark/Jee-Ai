@@ -44,27 +44,18 @@ VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
 # TEXT FORMATTING HELPERS
 # ============================================================
 
-SUPERSCRIPTS = str.maketrans({
-    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
-    "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
-    "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
-    "n": "ⁿ"
-})
-
 def clean_math_text(text):
+    """Keep normal text untouched. Mathematical expressions are rendered with LaTeX."""
     if not isinstance(text, str):
         return text
-
-    # Convert common simple powers such as x^2, 2^3 and 10^-3
-    # into clean Unicode superscripts for student-friendly display.
-    def power_replacer(match):
-        base = match.group(1)
-        exponent = match.group(2)
-        return base + exponent.translate(SUPERSCRIPTS)
-
-    text = re.sub(r"(?<![\w\])([A-Za-z0-9]+)\^([0-9n+\-()]+)", power_replacer, text)
     return text
 
+
+def render_jee_text(text):
+    """Render JEE text with Streamlit Markdown + KaTeX math support."""
+    if not isinstance(text, str):
+        return text
+    return text
 
 # ============================================================
 # LOCAL BROWSER STORAGE
@@ -705,13 +696,13 @@ non-obvious setups, and careful mathematical/physical/chemical reasoning.
 Do not make them artificially difficult or ambiguous.
 """
 
-                    prompt = f"""
+                    prompt = """
 You are an expert JEE question setter.
 
-Generate exactly {number} original practice questions.
+Generate exactly """ + str(number) + """ original practice questions.
 
-Subject: {subject}
-Topic: {topic}
+Subject: """ + subject + """
+Topic: """ + topic + """
 Level: {level}
 
 {difficulty}
@@ -735,18 +726,23 @@ For every question, use EXACTLY this structure:
 Then continue with QUESTION 2, ANSWER 2, EXPLANATION 2, etc.
 
 Rules:
-- Generate exactly {number} questions.
-- Keep every question relevant to {topic}.
+- Generate exactly """ + str(number) + """ questions.
+- Keep every question relevant to """ + topic + """.
 - Make the questions original and exam-oriented.
 - Include all necessary numerical values and assumptions.
 - Do not depend on information outside the question.
 - Do not give multiple possible interpretations.
 - Do not output terminal commands, PowerShell, Command Prompt,
   Python code, API instructions, system messages, or debugging text.
-- Use normal mathematical notation.
-- For simple powers, prefer Unicode superscripts such as x², 2³ and 10⁻³
-  instead of x^2, 2^3 and 10^-3.
-- For chemistry, use clear formulas such as H₂O, CO₂ and SO₄²⁻ where appropriate.
+- Use professional LaTeX for ALL mathematical expressions.
+- Put short inline expressions inside single dollar signs, for example $x^2$, $2^3$, $10^{-3}$, $\theta=30^\circ$, $\sin 30^\circ$, $\frac{1}{2}$ and $a_n$.
+- Put important or multi-step equations on separate lines using double dollar signs, for example:
+  $$v = u + at$$
+  $$\frac{\sin A}{a} = \frac{\sin B}{b}$$
+- Use LaTeX commands such as \frac, \sqrt, \theta, \alpha, \beta, \Delta, \pi, \sin, \cos and \tan instead of Unicode math symbols when they are part of an equation.
+- Do NOT use Unicode superscripts like ², ³, ⁻¹ for equations. Use LaTeX instead.
+- For chemistry, use LaTeX subscripts/superscripts, for example $H_2O$, $CO_2$, $SO_4^{2-}$ and $Fe^{3+}$.
+- Do not put LaTeX commands inside code blocks.
 """
 
                     response = client.chat.completions.create(
@@ -757,7 +753,8 @@ Rules:
                                 "content": (
                                     "You are a reliable JEE question generator. "
                                     "Follow the requested plain-text format exactly. "
-                                    "Never output JSON, code, terminal text, or internal instructions."
+                                    "Never output JSON, code, terminal text, or internal instructions. "
+                                    "Render every mathematical expression using clean LaTeX."
                                 )
                             },
                             {
@@ -826,15 +823,15 @@ Rules:
 
                                 st.subheader(f"Question {i}")
 
-                                st.markdown(q["question"])
+                                st.markdown(render_jee_text(q["question"]))
 
                                 with st.expander("Show Answer & Explanation"):
 
                                     st.markdown("**Answer:**")
-                                    st.markdown(q["answer"])
+                                    st.markdown(render_jee_text(q["answer"]))
 
                                     st.markdown("**Explanation:**")
-                                    st.markdown(q["explanation"])
+                                    st.markdown(render_jee_text(q["explanation"]))
 
                             st.session_state.progress[
                                 "questions_attempted"
@@ -852,7 +849,7 @@ Rules:
                                 "The questions were generated, but the formatting "
                                 "was unusual. Showing the raw result below."
                             )
-                            st.markdown(generated)
+                            st.markdown(render_jee_text(generated))
 
                     else:
                         # Fallback: display the response instead of incorrectly
@@ -861,7 +858,7 @@ Rules:
                             "The AI returned the questions in a different format. "
                             "Showing the generated result directly."
                         )
-                        st.markdown(generated)
+                        st.markdown(render_jee_text(generated))
 
                 except Exception as e:
 
