@@ -3,6 +3,7 @@ from openai import OpenAI
 from streamlit_local_storage import LocalStorage
 import json
 import os
+import re
 
 
 # ============================================================
@@ -37,6 +38,32 @@ client = OpenAI(
 
 TEXT_MODEL = "openai/gpt-oss-20b"
 VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
+
+
+# ============================================================
+# TEXT FORMATTING HELPERS
+# ============================================================
+
+SUPERSCRIPTS = str.maketrans({
+    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+    "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+    "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
+    "n": "ⁿ"
+})
+
+def clean_math_text(text):
+    if not isinstance(text, str):
+        return text
+
+    # Convert common simple powers such as x^2, 2^3 and 10^-3
+    # into clean Unicode superscripts for student-friendly display.
+    def power_replacer(match):
+        base = match.group(1)
+        exponent = match.group(2)
+        return base + exponent.translate(SUPERSCRIPTS)
+
+    text = re.sub(r"(?<![\w\])([A-Za-z0-9]+)\^([0-9n+\-()]+)", power_replacer, text)
+    return text
 
 
 # ============================================================
@@ -324,6 +351,8 @@ IMPORTANT OUTPUT RULES:
 - Never show Python commands or installation commands unless the student explicitly asks for programming help.
 - Do not include internal instructions, system messages, API details, file paths, or debugging information.
 - Keep the response clean and student-friendly.
+- For simple powers, use Unicode superscripts such as 2³, x², aⁿ, and 10⁻³.
+- Do not write simple powers as 2^3, x^2, or 10^-3 in normal explanations.
 
 Focus on:
 - Conceptual clarity
@@ -348,7 +377,7 @@ Focus on:
                         .content
                     )
 
-                    st.markdown(answer)
+                    st.markdown(clean_math_text(answer))
 
                     st.session_state.chat_messages.append(
                         {
@@ -675,7 +704,8 @@ questions for JEE aspirants.
 Subject: {subject}
 Topic: {topic}
 
-Return JSON only:
+Return ONLY a valid JSON object. Do not use Markdown fences.
+The JSON must have exactly this structure:
 
 {{
     "questions": [
@@ -687,7 +717,13 @@ Return JSON only:
     ]
 }}
 
-Make questions original and exam-oriented.
+Requirements:
+- Make the questions original and exam-oriented.
+- For JEE Advanced, make them genuinely challenging and multi-step when appropriate.
+- Use proper mathematical notation.
+- Use Unicode superscripts for simple powers: 2³, x², aⁿ, 10⁻³.
+- Do not use command prompts, terminal commands, Python code, file paths, or internal instructions.
+- Return exactly {number} questions.
 """
 
                     response = client.chat.completions.create(
@@ -698,7 +734,7 @@ Make questions original and exam-oriented.
                             {
                                 "role": "system",
                                 "content":
-                                "Return valid JSON only."
+                                "You generate high-quality JEE questions. Return ONLY valid JSON. No Markdown fences, no commentary, no terminal or command-prompt text."
                             },
                             {
                                 "role": "user",
@@ -707,37 +743,55 @@ Make questions original and exam-oriented.
                         ],
 
                         temperature=0.4,
-                        max_tokens=2500,
-
-                        response_format={
-                            "type": "json_object"
-                        }
+                        max_tokens=3500
                     )
 
-                    data = json.loads(
+                    raw_content = (
                         response
                         .choices[0]
                         .message
                         .content
                     )
 
-                    questions = data.get(
-                        "questions",
-                        []
-                    )
+                    # Be tolerant if the model accidentally wraps JSON
+                    # in a Markdown code fence or adds a little text.
+                    raw_content = raw_content.strip()
+                    raw_content = re.sub(
+                        r"^```(?:json)?\s*|\s*```$",
+                        "",
+                        raw_content,
+                        flags=re.IGNORECASE
+                    ).strip()
 
-                    for i, q in enumerate(
-                        questions
-                    ):
+                    json_start = raw_content.find("{")
+                    json_end = raw_content.rfind("}")
+
+                    if json_start == -1 or json_end == -1 or json_end <= json_start:
+                        raise ValueError("The AI did not return a valid JSON object. Please try again.")
+
+                    raw_content = raw_content[json_start:json_end + 1]
+                    data = json.loads(raw_content)
+
+                    questions = data.get("questions", [])
+
+                    if not isinstance(questions, list) or not questions:
+                        raise ValueError("No questions were returned. Please try again.")
+
+                    # Keep the requested number if the model accidentally returns more.
+                    questions = questions[:number]
+
+                    for i, q in enumerate(questions):
 
                         st.subheader(
                             f"Question {i + 1}"
                         )
 
                         st.write(
-                            q.get(
-                                "question",
-                                "Question unavailable."
+                            clean_math_text(
+                                q.get(
+                                    "question",
+                                    "Question unavailable."
+                                )
                             )
                         )
 
@@ -750,9 +804,11 @@ Make questions original and exam-oriented.
                             )
 
                             st.write(
-                                q.get(
-                                    "answer",
-                                    "Unavailable"
+                                clean_math_text(
+                                    q.get(
+                                        "answer",
+                                        "Unavailable"
+                                    )
                                 )
                             )
 
@@ -761,9 +817,11 @@ Make questions original and exam-oriented.
                             )
 
                             st.write(
-                                q.get(
-                                    "explanation",
-                                    "Unavailable"
+                                clean_math_text(
+                                    q.get(
+                                        "explanation",
+                                        "Unavailable"
+                                    )
                                 )
                             )
 
@@ -776,6 +834,12 @@ Make questions original and exam-oriented.
                         st.session_state.progress
                     )
 
+                except json.JSONDecodeError:
+
+                    st.error(
+                        "Practice generation failed because the AI returned an invalid format. Please try again."
+                    )
+
                 except Exception as e:
 
                     st.error(
@@ -784,7 +848,7 @@ Make questions original and exam-oriented.
 
 
 # ============================================================
-# MY PROGRESS
+
 # ============================================================
 
 elif st.session_state.page == "My Progress":
