@@ -639,31 +639,27 @@ Avoid generic motivational fluff.
 # PRACTICE
 # ============================================================
 
+# ============================================================
+# PRACTICE
+# ============================================================
+
 elif st.session_state.page == "Practice":
 
     st.title("🎯 Practice Generator")
+    st.caption("Generate clean JEE Main or JEE Advanced practice questions.")
 
     col1, col2 = st.columns(2)
 
     with col1:
-
         subject = st.selectbox(
             "Subject",
-            [
-                "Physics",
-                "Chemistry",
-                "Mathematics"
-            ]
+            ["Physics", "Chemistry", "Mathematics"]
         )
 
     with col2:
-
         level = st.selectbox(
             "Level",
-            [
-                "JEE Main",
-                "JEE Advanced"
-            ]
+            ["JEE Main", "JEE Advanced"]
         )
 
     topic = st.text_input(
@@ -683,173 +679,198 @@ elif st.session_state.page == "Practice":
         use_container_width=True
     ):
 
-        if not topic:
-
-            st.warning(
-                "Enter a topic first."
-            )
+        if not topic.strip():
+            st.warning("Enter a topic first.")
 
         else:
 
-            with st.spinner(
-                "Generating questions..."
-            ):
+            with st.spinner("Generating questions..."):
 
                 try:
 
+                    if level == "JEE Main":
+                        difficulty = """
+Create JEE Main level questions.
+Use standard JEE Main difficulty.
+Questions should be solvable using the concepts of the given topic,
+with moderate calculation and exam-style thinking.
+"""
+
+                    else:
+                        difficulty = """
+Create JEE Advanced level questions.
+Use genuinely challenging JEE Advanced style.
+Prefer multi-step reasoning, multiple concepts where appropriate,
+non-obvious setups, and careful mathematical/physical/chemical reasoning.
+Do not make them artificially difficult or ambiguous.
+"""
+
                     prompt = f"""
-Generate {number} high-quality {level}
-questions for JEE aspirants.
+You are an expert JEE question setter.
+
+Generate exactly {number} original practice questions.
 
 Subject: {subject}
 Topic: {topic}
+Level: {level}
 
-Return ONLY a valid JSON object. Do not use Markdown fences.
-The JSON must have exactly this structure:
+{difficulty}
 
-{{
-    "questions": [
-        {{
-            "question": "...",
-            "answer": "...",
-            "explanation": "..."
-        }}
-    ]
-}}
+IMPORTANT OUTPUT FORMAT:
+Do NOT return JSON.
+Do NOT use Markdown code fences.
+Do NOT write any introduction or conclusion.
 
-Requirements:
+For every question, use EXACTLY this structure:
+
+### QUESTION 1
+[question statement]
+
+### ANSWER 1
+[short final answer]
+
+### EXPLANATION 1
+[clear step-by-step solution]
+
+Then continue with QUESTION 2, ANSWER 2, EXPLANATION 2, etc.
+
+Rules:
+- Generate exactly {number} questions.
+- Keep every question relevant to {topic}.
 - Make the questions original and exam-oriented.
-- For JEE Advanced, make them genuinely challenging and multi-step when appropriate.
-- Use proper mathematical notation.
-- Use Unicode superscripts for simple powers: 2³, x², aⁿ, 10⁻³.
-- Do not use command prompts, terminal commands, Python code, file paths, or internal instructions.
-- Return exactly {number} questions.
+- Include all necessary numerical values and assumptions.
+- Do not depend on information outside the question.
+- Do not give multiple possible interpretations.
+- Do not output terminal commands, PowerShell, Command Prompt,
+  Python code, API instructions, system messages, or debugging text.
+- Use normal mathematical notation.
+- For simple powers, prefer Unicode superscripts such as x², 2³ and 10⁻³
+  instead of x^2, 2^3 and 10^-3.
+- For chemistry, use clear formulas such as H₂O, CO₂ and SO₄²⁻ where appropriate.
 """
 
                     response = client.chat.completions.create(
-
                         model=TEXT_MODEL,
-
                         messages=[
                             {
                                 "role": "system",
-                                "content":
-                                "You generate high-quality JEE questions. Return ONLY valid JSON. No Markdown fences, no commentary, no terminal or command-prompt text."
+                                "content": (
+                                    "You are a reliable JEE question generator. "
+                                    "Follow the requested plain-text format exactly. "
+                                    "Never output JSON, code, terminal text, or internal instructions."
+                                )
                             },
                             {
                                 "role": "user",
                                 "content": prompt
                             }
                         ],
-
-                        temperature=0.4,
-                        max_tokens=3500
+                        temperature=0.3,
+                        max_tokens=4096
                     )
 
-                    raw_content = (
-                        response
-                        .choices[0]
-                        .message
-                        .content
-                    )
+                    generated = response.choices[0].message.content
 
-                    # Be tolerant if the model accidentally wraps JSON
-                    # in a Markdown code fence or adds a little text.
-                    raw_content = raw_content.strip()
-                    raw_content = re.sub(
-                        r"^```(?:json)?\s*|\s*```$",
-                        "",
-                        raw_content,
-                        flags=re.IGNORECASE
-                    ).strip()
-
-                    json_start = raw_content.find("{")
-                    json_end = raw_content.rfind("}")
-
-                    if json_start == -1 or json_end == -1 or json_end <= json_start:
-                        raise ValueError("The AI did not return a valid JSON object. Please try again.")
-
-                    raw_content = raw_content[json_start:json_end + 1]
-                    data = json.loads(raw_content)
-
-                    questions = data.get("questions", [])
-
-                    if not isinstance(questions, list) or not questions:
-                        raise ValueError("No questions were returned. Please try again.")
-
-                    # Keep the requested number if the model accidentally returns more.
-                    questions = questions[:number]
-
-                    for i, q in enumerate(questions):
-
-                        st.subheader(
-                            f"Question {i + 1}"
+                    if not generated or not generated.strip():
+                        raise ValueError(
+                            "The AI returned an empty response. Please try again."
                         )
 
-                        st.write(
-                            clean_math_text(
-                                q.get(
-                                    "question",
-                                    "Question unavailable."
+                    generated = generated.strip()
+
+                    # Remove accidental Markdown fences if the model adds them.
+                    generated = generated.replace("```text", "")
+                    generated = generated.replace("```markdown", "")
+                    generated = generated.replace("```", "")
+                    generated = generated.strip()
+
+                    # Find each question block without requiring JSON.
+                    pattern = re.compile(
+                        r"###\s*QUESTION\s*(\d+)\s*"
+                        r"(.*?)"
+                        r"###\s*ANSWER\s*\1\s*"
+                        r"(.*?)"
+                        r"###\s*EXPLANATION\s*\1\s*"
+                        r"(.*?)(?=###\s*QUESTION\s*\d+\s*$|\Z)",
+                        re.IGNORECASE | re.DOTALL | re.MULTILINE
+                    )
+
+                    matches = pattern.findall(generated)
+
+                    if matches:
+
+                        valid_questions = []
+
+                        for q_number, question_text, answer_text, explanation_text in matches:
+
+                            question_text = question_text.strip()
+                            answer_text = answer_text.strip()
+                            explanation_text = explanation_text.strip()
+
+                            if question_text:
+                                valid_questions.append(
+                                    {
+                                        "question": question_text,
+                                        "answer": answer_text,
+                                        "explanation": explanation_text
+                                    }
                                 )
+
+                        if valid_questions:
+
+                            st.success(
+                                f"Generated {len(valid_questions)} question(s)."
                             )
+
+                            for i, q in enumerate(valid_questions, start=1):
+
+                                st.subheader(f"Question {i}")
+
+                                st.markdown(q["question"])
+
+                                with st.expander("Show Answer & Explanation"):
+
+                                    st.markdown("**Answer:**")
+                                    st.markdown(q["answer"])
+
+                                    st.markdown("**Explanation:**")
+                                    st.markdown(q["explanation"])
+
+                            st.session_state.progress[
+                                "questions_attempted"
+                            ] += len(valid_questions)
+
+                            save_local(
+                                PROGRESS_KEY,
+                                st.session_state.progress
+                            )
+
+                        else:
+                            # Never throw away a usable AI response just because
+                            # the formatting was slightly different.
+                            st.warning(
+                                "The questions were generated, but the formatting "
+                                "was unusual. Showing the raw result below."
+                            )
+                            st.markdown(generated)
+
+                    else:
+                        # Fallback: display the response instead of incorrectly
+                        # reporting "generation failed".
+                        st.warning(
+                            "The AI returned the questions in a different format. "
+                            "Showing the generated result directly."
                         )
-
-                        with st.expander(
-                            "Show Answer & Explanation"
-                        ):
-
-                            st.markdown(
-                                "**Answer:**"
-                            )
-
-                            st.write(
-                                clean_math_text(
-                                    q.get(
-                                        "answer",
-                                        "Unavailable"
-                                    )
-                                )
-                            )
-
-                            st.markdown(
-                                "**Explanation:**"
-                            )
-
-                            st.write(
-                                clean_math_text(
-                                    q.get(
-                                        "explanation",
-                                        "Unavailable"
-                                    )
-                                )
-                            )
-
-                    st.session_state.progress[
-                        "questions_attempted"
-                    ] += len(questions)
-
-                    save_local(
-                        PROGRESS_KEY,
-                        st.session_state.progress
-                    )
-
-                except json.JSONDecodeError:
-
-                    st.error(
-                        "Practice generation failed because the AI returned an invalid format. Please try again."
-                    )
+                        st.markdown(generated)
 
                 except Exception as e:
 
                     st.error(
-                        f"Practice generation failed: {e}"
+                        "Practice generation failed. Please try again."
                     )
 
-
-# ============================================================
-
-# ============================================================
+                    with st.expander("Technical details"):
+                        st.code(str(e))
 
 elif st.session_state.page == "My Progress":
 
