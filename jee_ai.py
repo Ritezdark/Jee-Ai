@@ -21,7 +21,10 @@ st.set_page_config(
 # NVIDIA AI
 # ============================================================
 
-NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY")
+if "NVIDIA_API_KEY" in st.secrets:
+    NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
+else:
+    NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY")
 
 if not NVIDIA_API_KEY:
     st.error("NVIDIA_API_KEY is not set.")
